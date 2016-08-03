@@ -1,0 +1,85 @@
+# Copyright (c) 2016, Neeraj Sharma <neeraj.sharma@alumni.iitg.ernet.in>
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# * Redistributions of source code must retain the above copyright notice, this
+#   list of conditions and the following disclaimer.
+#
+# * Redistributions in binary form must reproduce the above copyright notice,
+#   this list of conditions and the following disclaimer in the documentation
+#   and/or other materials provided with the distribution.
+#
+# * Neither the name of u-stockmarket nor the names of its
+#   contributors may be used to endorse or promote products derived from
+#   this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+LOCAL_PATH=$(shell pwd)
+RUMPRUN_PACKAGES_PATH=$(LOCAL_PATH)/build/rumprun-packages
+BUILT_ERL_BIN_PATH=$(RUMPRUN_PACKAGES_PATH)/erlang/build/bin
+
+ifeq ($(shell uname),Darwin)
+RUMPRUN_GENISOIMAGE=hdiutil makehybrid -iso
+else
+RUMPRUN_GENISOIMAGE=genisoimage -l -r
+endif
+
+
+.PHONY: setup_rumprun build_rumprun build_rumprun_packages
+
+setup_rumprun: build_rumprun build_rumprun_packages
+
+build_rumprun: .rumprun_tuple
+
+build/rumprun:
+	mkdir -p build
+	(cd build; \
+	git clone http://repo.rumpkernel.org/rumprun; \
+	cd rumprun; \
+	git submodule update --init)
+
+.rumprun_tuple: build/rumprun
+	(cd build/rumprun; \
+	CC=cc ./build-rr.sh hw)
+	ls build/rumprun/rumprun/bin/*-gcc | rev | cut -f 1 -d'/' | cut -f2- -d'-' | rev > .rumprun_tuple
+
+build_rumprun_packages: .rumprun_packages_built
+
+build/rumprun-packages:
+	(cd build; git clone http://repo.rumpkernel.org/rumprun-packages)
+
+build/rumprun-packages/config.mk: build/rumprun-packages .rumprun_tuple
+	(cd build/rumprun-packages; \
+	sed -e "s/RUMPRUN_TOOLCHAIN_TUPLE=.*/RUMPRUN_TOOLCHAIN_TUPLE=$(shell cat .rumprun_tuple)/g" config.mk.dist > config.mk)
+	
+
+.rumprun_packages_built: build/rumprun-packages/config.mk
+	(cd $(RUMPRUN_PACKAGES_PATH)/erlang; \
+	PATH=$(LOCAL_PATH)/build/rumprun/rumprun/bin:$$PATH make; \
+	PATH=$(LOCAL_PATH)/build/rumprun/rumprun/bin:$$PATH make beam.hw.bin)
+	touch .rumprun_packages_built
+
+
+# ---- application and script targets
+
+app.iso: compile
+	mkdir -p build/app-modules
+	cp deps/*/ebin/* build/app-modules/
+	cp ebin/* build/app-modules/
+	cp $(RUMPRUN_PACKAGES_PATH)/erlang/examples/setnodename/*.beam build/app-modules/
+	$(RUMPRUN_GENISOIMAGE) -o app.iso build/app-modules/
+
+erlrun.sh: build_rumprun_packages
+	cp $(RUMPRUN_PACKAGES_PATH)/erlang/erlrun.sh .
