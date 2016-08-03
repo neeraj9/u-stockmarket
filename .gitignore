@@ -1,0 +1,15 @@
+*.beam
+build
+.concrete/DEV_MODE
+deps
+ebin
+erl_crash.dump
+.eunit
+.idea
+*.iml
+log
+*.o
+*.plt
+.rebar
+.rumprun_packages_built
+.rumprun_tuple
